@@ -25,8 +25,6 @@ import java.util.List;
 import org.apache.tajo.catalog.proto.CatalogProtos.HistogramProto;
 import org.apache.tajo.util.TUtil;
 
-import com.google.common.annotations.VisibleForTesting;
-
 public class EquiDepthHistogram extends Histogram {
 
   public EquiDepthHistogram() {
@@ -50,7 +48,6 @@ public class EquiDepthHistogram extends Histogram {
    * Note that, this function, which allows the specification of the (maximum) number of buckets, should be called
    * directly only in the unit tests. In non-test cases, the construct(samples) version above should be used.
    */
-  @VisibleForTesting
   public boolean construct(List<Double> srcSamples, int numBuckets) {
     isReady = false;
     buckets = TUtil.newList();
@@ -78,8 +75,17 @@ public class EquiDepthHistogram extends Histogram {
 	bFrequency++;
       }
       bMax = samples.get(bMaxIndex);
+      
+      List<Double> bucketSamples = new ArrayList<Double>();
+      int j = bMinIndex;
+      do {
+	bucketSamples.add(samples.get(j));
+	j++;
+      } while (j <= bMaxIndex);
+      float bVariance = computeSampleSkewness(bucketSamples);
+      
       bMinIndex = bMaxIndex + 1;
-      buckets.add(new HistogramBucket(bMin, bMax, bFrequency));
+      buckets.add(new HistogramBucket(bMin, bMax, bFrequency, bVariance));
     }
 
     if (bMinIndex < samples.size()) {

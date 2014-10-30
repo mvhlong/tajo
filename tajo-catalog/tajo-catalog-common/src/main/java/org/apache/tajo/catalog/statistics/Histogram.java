@@ -19,6 +19,7 @@
 package org.apache.tajo.catalog.statistics;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.tajo.catalog.json.CatalogGsonHelper;
@@ -31,39 +32,41 @@ import com.google.common.base.Objects;
 import com.google.gson.annotations.Expose;
 
 public class Histogram implements ProtoObject<CatalogProtos.HistogramProto>, Cloneable, GsonObject {
-  
+
   @Expose
   protected Long lastAnalyzed = null; // optional, store the last time point that this histogram is constructed,
 				      // will be used together with the "last-updated time" of the column data
 				      // to decide whether this histogram needs to be reconstructed or not
-  @Expose protected List<HistogramBucket> buckets = null; // repeated
-  @Expose protected boolean isReady; // whether this histogram is ready to be used for selectivity estimation
+  @Expose
+  protected List<HistogramBucket> buckets = null; // repeated
+  @Expose
+  protected boolean isReady; // whether this histogram is ready to be used for selectivity estimation
   protected int DEFAULT_MAX_BUCKETS = 100; // Same as PostgreSQL
 
   public Histogram() {
     buckets = TUtil.newList();
     isReady = false;
   }
-  
+
   public Histogram(CatalogProtos.HistogramProto proto) {
     if (proto.hasLastAnalyzed()) {
       this.lastAnalyzed = proto.getLastAnalyzed();
-    }    
+    }
     buckets = TUtil.newList();
     for (CatalogProtos.HistogramBucketProto bucketProto : proto.getBucketsList()) {
       this.buckets.add(new HistogramBucket(bucketProto));
     }
     isReady = true;
   }
-  
+
   public Long getLastAnalyzed() {
     return this.lastAnalyzed;
   }
-  
+
   public void setLastAnalyzed(Long lastAnalyzed) {
     this.lastAnalyzed = lastAnalyzed;
   }
-  
+
   public List<HistogramBucket> getBuckets() {
     return this.buckets;
   }
@@ -83,16 +86,15 @@ public class Histogram implements ProtoObject<CatalogProtos.HistogramProto>, Clo
   public boolean getIsReady() {
     return this.isReady;
   }
-  
+
   public void setIsReady(boolean isReady) {
     this.isReady = isReady;
   }
-  
+
   public boolean equals(Object obj) {
     if (obj instanceof Histogram) {
       Histogram other = (Histogram) obj;
-      return getLastAnalyzed().equals(other.getLastAnalyzed())
-          && TUtil.checkEquals(this.buckets, other.buckets);
+      return getLastAnalyzed().equals(other.getLastAnalyzed()) && TUtil.checkEquals(this.buckets, other.buckets);
     } else {
       return false;
     }
@@ -113,12 +115,15 @@ public class Histogram implements ProtoObject<CatalogProtos.HistogramProto>, Clo
   public String toString() {
     return CatalogGsonHelper.getPrettyInstance().toJson(this, Histogram.class);
   }
+  
+  public String getSimpleClassName() {
+    return this.getClass().getSimpleName();
+  }
 
   @Override
   public String toJson() {
     return CatalogGsonHelper.toJson(this, Histogram.class);
   }
-
 
   @Override
   public CatalogProtos.HistogramProto getProto() {
@@ -128,7 +133,7 @@ public class Histogram implements ProtoObject<CatalogProtos.HistogramProto>, Clo
     }
     if (this.buckets != null) {
       for (HistogramBucket bucket : buckets) {
-        builder.addBuckets(bucket.getProto());
+	builder.addBuckets(bucket.getProto());
       }
     }
     return builder.build();
@@ -136,8 +141,8 @@ public class Histogram implements ProtoObject<CatalogProtos.HistogramProto>, Clo
 
   /**
    * Construct a histogram. Compute the number of buckets and the min, max, frequency values for each of them. This
-   * method must be overridden by specific sub-classes. The number of buckets should be less than or equal to the
-   * sample size.
+   * method must be overridden by specific sub-classes. The number of buckets should be less than or equal to the sample
+   * size.
    * 
    * @param samples
    *          Sample data points to construct the histogram. This collection should fit in the memory and Null values
@@ -165,51 +170,58 @@ public class Histogram implements ProtoObject<CatalogProtos.HistogramProto>, Clo
    * @return The selectivity in range [0..1]. If the histogram is not ready (i.e., being constructed), return -1
    */
   public double estimateSelectivity(Double from, Double to) {
-    if(from > to) return 0;
-    if(!isReady) return -1;
+    if (from > to)
+      return 0;
+    if (!isReady)
+      return -1;
     Double freq = estimateFrequency(from, to);
     Double totalFreq = 0.0;
-    for(HistogramBucket bucket : buckets) {
+    for (HistogramBucket bucket : buckets) {
       totalFreq += bucket.getFrequency();
     }
     double selectivity = freq / totalFreq;
     return selectivity;
   }
-  
+
   public double estimateSelectivity(Float from, Float to) {
     return estimateSelectivity(from.doubleValue(), to.doubleValue());
   }
-  
+
   public double estimateSelectivity(Long from, Long to) {
     return estimateSelectivity(from.doubleValue(), to.doubleValue());
   }
-  
+
   public double estimateSelectivity(Integer from, Integer to) {
     return estimateSelectivity(from.doubleValue(), to.doubleValue());
   }
-  
+
   /**
    * Based on the histogram's buckets, estimate the number of rows whose values (of the corresponding column) are
    * between "from" and "to".
    * 
    * @param from
    * @param to
-   * @return 
+   * @return
    */
-  private Double estimateFrequency(Double from, Double to) {
+  public Double estimateFrequency(Double from, Double to) {
     Double estimate = 0.0;
-    for(HistogramBucket bucket : buckets) {
+    for (HistogramBucket bucket : buckets) {
       estimate += estimateFrequency(bucket, from, to);
     }
     return estimate;
   }
-  
-  private Double estimateFrequency(HistogramBucket bucket, Double from, Double to) {
+
+  public Double estimateFrequency(HistogramBucket bucket, Double from, Double to) {
+    Double overlap = computeOverlapRatio(from, to, bucket);
+    return overlap * bucket.getFrequency();
+  }
+
+  public Double computeOverlapRatio(Double from, Double to, HistogramBucket bucket) {
     Double min = bucket.getMin();
     Double max = bucket.getMax();
     Double width = max - min;
-    Double overlap = 0.0;
-    
+
+    Double overlap;
     if (min < max) {
       if (from < min) {
 	if (to < min) {
@@ -229,13 +241,90 @@ public class Histogram implements ProtoObject<CatalogProtos.HistogramProto>, Clo
 	overlap = 0.0;
       }
     } else { // min == max
-      if(min >= from && min <= to) {
+      if (min >= from && min <= to) {
 	overlap = 1.0;
       } else {
 	overlap = 0.0;
       }
     }
-    
-    return overlap * bucket.getFrequency();
+    return overlap;
+  }
+  
+  public Double computeOverlapDistance(Double from, Double to, HistogramBucket bucket) {
+    Double min = bucket.getMin();
+    Double max = bucket.getMax();
+
+    Double overlap;
+    if (min < max) {
+      if (from < min) {
+	if (to < min) {
+	  overlap = 0.0;
+	} else if (to >= min && to <= max) {
+	  overlap = (to - min);
+	} else {
+	  overlap = 1.0; // *
+	}
+      } else if (from >= min && from <= max) {
+	if (to <= max) {
+	  overlap = (to - from);
+	} else {
+	  overlap = (max - from);
+	}
+      } else {
+	overlap = 0.0;
+      }
+    } else { // min == max
+      if (min >= from && min <= to) {
+	overlap = 1.0; // *
+      } else {
+	overlap = 0.0;
+      }
+    }
+    return overlap;
+  }
+
+  public static float computeSampleSkewness(List<Double> samples) {
+    if (samples.size() == 0 || samples.size() == 1) {
+      return 0f;
+    } else {
+      // Compute frequencies
+      double max = Collections.max(samples);
+      double min = Collections.min(samples);
+      int numBins = samples.size();
+      double width = (max - min) / numBins;
+      List<Long> binFrequencies = new ArrayList<Long>(numBins);
+
+      for (int i = 0; i < numBins; i++) {
+	binFrequencies.add(0l);
+      }
+      
+      for (Double p : samples) {
+	int bIndex = (int) Math.round(Math.floor((p - min) / width));
+	if (bIndex > numBins - 1)
+	  bIndex = numBins - 1;
+	binFrequencies.set(bIndex, binFrequencies.get(bIndex) + 1);
+      }
+
+      // Compute skewness as the variance of frequencies
+      double sumX = 0;
+      double sumXX = 0;
+
+      for (Long x : binFrequencies) {
+	sumX += x;
+	sumXX += x * x;
+      }
+
+      double variance = (sumXX - (sumX * sumX) / binFrequencies.size()) / (binFrequencies.size() - 1.0);
+      return (float) variance;
+    }
+  }
+  
+  public double computeListAverage(List<Double> values) {
+    double sum = 0.0;
+    for (Double v : values) {
+      sum += v;
+    }
+    double avg = sum / values.size();
+    return avg;
   }
 }

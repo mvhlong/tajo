@@ -24,8 +24,6 @@ import java.util.List;
 import org.apache.tajo.catalog.proto.CatalogProtos.HistogramProto;
 import org.apache.tajo.util.TUtil;
 
-import com.google.common.annotations.VisibleForTesting;
-
 public class EquiWidthHistogram extends Histogram {
 
   public EquiWidthHistogram() {
@@ -50,7 +48,6 @@ public class EquiWidthHistogram extends Histogram {
    * Note that, this function, which allows the specification of the (maximum) number of buckets, should be called
    * directly only in the unit tests. In non-test cases, the construct(samples) version above should be used.
    */
-  @VisibleForTesting
   public boolean construct(List<Double> samples, int numBuckets) {
     isReady = false;
     buckets = TUtil.newList();
@@ -59,6 +56,8 @@ public class EquiWidthHistogram extends Histogram {
     List<Double> bMinValues = new ArrayList<Double>(numBuckets);
     List<Double> bMaxValues = new ArrayList<Double>(numBuckets);
     List<Long> bFrequencies = new ArrayList<Long>(numBuckets);
+    
+    List<List<Double>> bucketSamples = new ArrayList<List<Double>>(numBuckets);
 
     for (Double p : samples) {
       if (p < globalMin) globalMin = p;
@@ -70,6 +69,8 @@ public class EquiWidthHistogram extends Histogram {
       bMinValues.add(Double.MAX_VALUE);
       bMaxValues.add(-Double.MAX_VALUE);
       bFrequencies.add(0l);
+      
+      bucketSamples.add(new ArrayList<Double>());
     }
 
     for (Double p : samples) {
@@ -79,11 +80,14 @@ public class EquiWidthHistogram extends Histogram {
 
       if (p < bMinValues.get(bIndex)) bMinValues.set(bIndex, p);
       if (p > bMaxValues.get(bIndex)) bMaxValues.set(bIndex, p);
+      
+      bucketSamples.get(bIndex).add(p);
     }
 
     for (int i = 0; i < numBuckets; i++) {
       if (bFrequencies.get(i).longValue() > 0) {
-	buckets.add(new HistogramBucket(bMinValues.get(i), bMaxValues.get(i), bFrequencies.get(i)));
+	buckets.add(new HistogramBucket(bMinValues.get(i), bMaxValues.get(i), bFrequencies.get(i),
+	    computeSampleSkewness(bucketSamples.get(i))));
       }
     }
 

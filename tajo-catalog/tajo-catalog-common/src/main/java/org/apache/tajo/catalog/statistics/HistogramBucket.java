@@ -32,17 +32,24 @@ public class HistogramBucket implements ProtoObject<CatalogProtos.HistogramBucke
   @Expose private Double min = null; // required
   @Expose private Double max = null; // required
   @Expose private Long frequency = null; // required
+  @Expose private Float variance = null; // optional
 
   public HistogramBucket(double min, double max) {
     this.min = min;
     this.max = max;
     this.frequency = 0l;
+    this.variance = 0f;
   }
   
   public HistogramBucket(double min, double max, long frequency) {
     this.min = min;
     this.max = max;
     this.frequency = frequency;
+  }
+  
+  public HistogramBucket(double min, double max, long frequency, float variance) {
+    this(min, max, frequency);
+    this.variance = variance;
   }
 
   public HistogramBucket(CatalogProtos.HistogramBucketProto proto) {
@@ -54,6 +61,9 @@ public class HistogramBucket implements ProtoObject<CatalogProtos.HistogramBucke
     }
     if (proto.hasFrequency()) {
       this.frequency = proto.getFrequency();
+    }
+    if (proto.hasVariance()) {
+      this.variance = proto.getVariance();
     }
   }
 
@@ -67,6 +77,10 @@ public class HistogramBucket implements ProtoObject<CatalogProtos.HistogramBucke
 
   public Long getFrequency() {
     return this.frequency;
+  }
+  
+  public Float getVariance() {
+    return this.variance;
   }
 
   public void setMin(Double minVal) {
@@ -82,6 +96,14 @@ public class HistogramBucket implements ProtoObject<CatalogProtos.HistogramBucke
       this.frequency = 0l;
     } else {
       this.frequency = freqVal;
+    }
+  }
+  
+  public void setVariance(Float variance) {
+    if(variance < 0) {
+      this.variance = 0f;
+    } else {
+      this.variance = variance;
     }
   }
 
@@ -105,6 +127,7 @@ public class HistogramBucket implements ProtoObject<CatalogProtos.HistogramBucke
     buk.min = this.min;
     buk.max = this.max;
     buk.frequency = this.frequency;
+    buk.variance = this.variance;
 
     return buk;
   }
@@ -130,6 +153,9 @@ public class HistogramBucket implements ProtoObject<CatalogProtos.HistogramBucke
     }
     if (this.frequency != null) {
       builder.setFrequency(this.frequency);
+    }
+    if (this.variance != null) {
+      builder.setVariance(this.variance);
     }
     return builder.build();
   }

@@ -217,6 +217,7 @@ message HistogramBucketProto {
   required double min = 1;
   required double max = 2;
   required uint64 frequency = 3;
+  optional float variance = 4;
 }
 
 enum StatType {

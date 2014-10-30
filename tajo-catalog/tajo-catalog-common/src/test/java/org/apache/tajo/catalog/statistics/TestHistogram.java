@@ -21,6 +21,7 @@ package org.apache.tajo.catalog.statistics;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
@@ -91,6 +92,107 @@ public class TestHistogram {
     return avg;
   }
 
+  @Test
+  public final void testCombineHistograms() {
+    int valueBound = 100;
+    int dataSize = 50000;
+    double samplingRatio = 0.1;
+    List<Double> dataSet, samples;
+    List<Histogram> histograms = TUtil.newList();
+    Random r = new Random(System.currentTimeMillis());
+
+    // Initialize
+    histograms.add(new EquiWidthHistogram());
+    histograms.add(new EquiDepthHistogram());
+    histograms.add(new CombineHistogram1());
+    histograms.add(new CombineHistogram2());
+
+    List<List<Double>> errorsList = TUtil.newList();
+    for (int i = 0; i < histograms.size() + 1; i++) {
+      errorsList.add(new ArrayList<Double>());
+    }
+
+    dataSet = generateRandomData(dataSize, valueBound);
+    /*dataSet = generateGaussianData(dataSize, valueBound, 5);*/
+    samples = getRandomSamples(dataSet, samplingRatio);
+
+    // Construct
+    long startTime = System.nanoTime();
+    for (Histogram h : histograms) {
+      h.construct(samples);
+      System.out.println("num buckets (" + h.getSimpleClassName() + "): " + h.getBucketsCount());
+    }
+    long elapsedTime = (System.nanoTime() - startTime) / 1000000;
+    System.out.format("Construction time: %d ms\n", elapsedTime);
+
+    // Test
+    testCombineHistograms(valueBound, dataSet, histograms, r, errorsList, 1);
+    testCombineHistograms(valueBound, dataSet, histograms, r, errorsList, 10);
+    testCombineHistograms(valueBound, dataSet, histograms, r, errorsList, 20);
+  }
+
+  private void testCombineHistograms(int valueBound, List<Double> dataSet, List<Histogram> histograms, Random r,
+      List<List<Double>> errorsList, int maxTestRange) {
+    Double from;
+    Double to;
+    Double estimate, estimate1 = 0.0;
+    Double real;
+    Double error;
+
+    for (int i = 0; i < 1000; i++) {
+      // Generate a query
+      from = r.nextDouble() + r.nextInt(valueBound) * 1.2;
+      if (r.nextDouble() < 0.5)
+	from = -from;
+      to = from + r.nextDouble() * maxTestRange;
+
+      real = computeRealSelectivity(dataSet, from, to);
+
+      // Estimate selectivity and compute estimation error
+      for (int j = 0; j < histograms.size(); j++) {
+	estimate = histograms.get(j).estimateSelectivity(from, to);
+	if (real.doubleValue() == 0) {
+	  if (estimate.doubleValue() == 0) {
+	    error = 0.0;
+	  } else {
+	    error = 1.0;
+	  }
+	} else {
+	  error = Math.abs(real - estimate) / real;
+	}
+	errorsList.get(j).add(error);
+
+	// A special case
+	if (j == 0) {
+	  estimate1 = estimate;
+	} else if (j == 1) {
+	  Double estimateC = Math.min(estimate1, estimate);
+
+	  if (real.doubleValue() == 0) {
+	    if (estimateC.doubleValue() == 0) {
+	      error = 0.0;
+	    } else {
+	      error = 1.0;
+	    }
+	  } else {
+	    error = Math.abs(real - estimateC) / real;
+	  }
+	  errorsList.get(histograms.size()).add(error);
+	}
+      }
+    }
+
+    System.out.println("maxTestRange: " + maxTestRange);
+
+    for (int i = 0; i < histograms.size(); i++) {
+      double avgAccuracy = (1.0 - computeListAverage(errorsList.get(i))) * 100.0;
+      System.out.format("Average accuracy (" + histograms.get(i).getSimpleClassName() + "): %.3f %%\n", avgAccuracy);
+    }
+
+    double avgAccuracyC = (1.0 - computeListAverage(errorsList.get(histograms.size()))) * 100.0;
+    System.out.format("Average accuracy (combine in estimation): %.3f %%\n", avgAccuracyC);
+  }
+  
   @Test
   public final void testHistogramAccuracy() {
     testHistogramAccuracy(0);
